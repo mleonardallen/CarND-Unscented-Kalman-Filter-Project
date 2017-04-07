@@ -11,17 +11,17 @@ using Eigen::MatrixXd;
 int LaserMeasurementPackage::n_z_ = 2;
 
 // Laser measurement noise standard deviation position1 in m
-double LaserMeasurementPackage::std_laspx_ = 0.15;
+double LaserMeasurementPackage::std_px_ = 0.15;
 
 // Laser measurement noise standard deviation position2 in m
-double LaserMeasurementPackage::std_laspy_ = 0.15;
+double LaserMeasurementPackage::std_py_ = 0.15;
 
 /**
  * Measurement covariance (R)
  */
 MatrixXd LaserMeasurementPackage::R_ = (
-  MatrixXd(n_z_, n_z_) << std_laspx_ * std_laspx_, 0,
-    0, std_laspy_ * std_laspy_
+  MatrixXd(n_z_, n_z_) << std_px_ * std_px_, 0,
+    0, std_py_ * std_py_
 ).finished();
 
 /*

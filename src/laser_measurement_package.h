@@ -36,10 +36,10 @@ private:
   static int n_z_;
 
   // Laser measurement noise standard deviation position1 in m
-  static double std_laspx_;
+  static double std_px_;
 
   // Laser measurement noise standard deviation position2 in m
-  static double std_laspy_;
+  static double std_py_;
 
 };
 
