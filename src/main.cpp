@@ -1,19 +1,18 @@
-
 #include <iostream>
-#include "Eigen/Dense"
-#include <vector>
-#include "ukf.h"
-#include "measurement_package.h"
 #include <fstream>
-#include <sstream>
+#include <vector>
 #include <stdlib.h>
 
+#include "Eigen/Dense"
+#include "ukf.h"
+#include "tools.h"
+#include "measurement_package.h"
+
 using namespace std;
-using Eigen::MatrixXd;
 using Eigen::VectorXd;
-using std::vector;
 
 void check_arguments(int argc, char* argv[]) {
+
   string usage_instructions = "Usage instructions: ";
   usage_instructions += argv[0];
   usage_instructions += " path/to/input.txt output.txt";
@@ -25,9 +24,9 @@ void check_arguments(int argc, char* argv[]) {
     cerr << usage_instructions << endl;
   } else if (argc == 2) {
     cerr << "Please include an output file.\n" << usage_instructions << endl;
-  } else if (argc == 3) {
+  } else if (argc == 3 || argc == 4) { // 3rd parameter is for measurement type
     has_valid_args = true;
-  } else if (argc > 3) {
+  } else if (argc > 4) {
     cerr << "Too many arguments.\n" << usage_instructions << endl;
   }
 
@@ -59,96 +58,77 @@ int main(int argc, char* argv[]) {
   string out_file_name_ = argv[2];
   ofstream out_file_(out_file_name_.c_str(), ofstream::out);
 
+  // measurement type argument
+  int measurement_type = MeasurementPackage::BOTH;
+  if (argc == 4) {
+    std::istringstream iss(argv[3]);
+    iss >> measurement_type;
+  }
+
   check_files(in_file_, in_file_name_, out_file_, out_file_name_);
 
   /**********************************************
    *  Set Measurements                          *
    **********************************************/
 
-  vector<MeasurementPackage> measurement_pack_list;
+  UKF ukf;
+  MeasurementPackage *meas_package;
+  VectorXd estimation;
+  VectorXd measurement;
+  VectorXd gt_values;
   string line;
 
-  // prep the measurement packages (each line represents a measurement at a
-  // timestamp)
+  // used to compute the RMSE later
+  vector<VectorXd> estimations;
+  vector<VectorXd> ground_truth;
+
   while (getline(in_file_, line)) {
-    string sensor_type;
-    MeasurementPackage meas_package;
-    istringstream iss(line);
-    long timestamp;
 
-    // reads first element from the current line
-    iss >> sensor_type;
+    // Create measurement package from sensor data
+    meas_package = MeasurementPackage::create(line);
+    measurement = meas_package->getCartesianMeasurement();
 
-    if (sensor_type.compare("L") == 0) {
-      // laser measurement
-
-      // read measurements at this timestamp
-      meas_package.sensor_type_ = MeasurementPackage::LASER;
-      meas_package.raw_measurements_ = VectorXd(2);
-      float px;
-      float py;
-      iss >> px;
-      iss >> py;
-      meas_package.raw_measurements_ << px, py;
-      iss >> timestamp;
-      meas_package.timestamp_ = timestamp;
-      measurement_pack_list.push_back(meas_package);
-    } else if (sensor_type.compare("R") == 0) {
-      // radar measurement
-
-      // read measurements at this timestamp
-      meas_package.sensor_type_ = MeasurementPackage::RADAR;
-      meas_package.raw_measurements_ = VectorXd(3);
-      float ro;
-      float theta;
-      float ro_dot;
-      iss >> ro;
-      iss >> theta;
-      iss >> ro_dot;
-      meas_package.raw_measurements_ << ro, theta, ro_dot;
-      iss >> timestamp;
-      meas_package.timestamp_ = timestamp;
-      measurement_pack_list.push_back(meas_package);
+    // Filter out measurement types other than passed in type.
+    // LIDAR = 1, RADAR = 2
+    if (measurement_type != MeasurementPackage::BOTH
+      and meas_package->sensor_type_ != measurement_type
+    ) {
+      continue;
     }
-  }
 
-  // Create a UKF instance
-  UKF ukf;
+    gt_values = meas_package->getGroundTruth();
 
-  size_t number_of_measurements = measurement_pack_list.size();
-
-  // start filtering from the second frame (the speed is unknown in the first
-  // frame)
-  for (size_t k = 0; k < number_of_measurements; ++k) {
     // Call the UKF-based fusion
-    ukf.ProcessMeasurement(measurement_pack_list[k]);
+    estimation = ukf.ProcessMeasurement(meas_package);
 
-    // output the estimation
-    out_file_ << ukf.x_(0) << "\t"; // pos1 - est
-    out_file_ << ukf.x_(1) << "\t"; // pos2 - est
-    out_file_ << ukf.x_(2) << "\t"; // vel_abs -est
-    out_file_ << ukf.x_(3) << "\t"; // yaw_angle -est
-    out_file_ << ukf.x_(4) << "\t"; // yaw_rate -est
+    // Output estimation and measurements
+    out_file_ << estimation(0) << "\t"; // px
+    out_file_ << estimation(1) << "\t"; // py
+    out_file_ << estimation(2) << "\t"; // vel_abs
+    out_file_ << estimation(3) << "\t"; // yaw_angle
+    out_file_ << estimation(4) << "\t"; // yaw_rate
 
-    // output the measurements
-    if (measurement_pack_list[k].sensor_type_ == MeasurementPackage::LASER) {
-      // output the estimation
+    out_file_ << measurement(0) << "\t"; // px
+    out_file_ << measurement(1) << "\t"; // py
 
-      // p1 - meas
-      out_file_ << measurement_pack_list[k].raw_measurements_(0) << "\t";
+    // output the ground truth packages
+    out_file_ << gt_values(0) << "\t"; // px
+    out_file_ << gt_values(1) << "\t"; // py
+    out_file_ << gt_values(2) << "\t"; // vx
+    out_file_ << gt_values(3) << "\t"; // vy
 
-      // p2 - meas
-      out_file_ << measurement_pack_list[k].raw_measurements_(1) << "\t";
-    } else if (measurement_pack_list[k].sensor_type_ == MeasurementPackage::RADAR) {
-      // output the estimation in the cartesian coordinates
-      float ro = measurement_pack_list[k].raw_measurements_(0);
-      float phi = measurement_pack_list[k].raw_measurements_(1);
-      out_file_ << ro * cos(phi) << "\t"; // p1_meas
-      out_file_ << ro * sin(phi) << "\t"; // p2_meas
-    }
+    out_file_ << ukf.getNIS() << "\t"; // NIS
 
     out_file_ << "\n";
+
+    // Used to calculate RMSE
+    estimations.push_back(ukf.getCartesianEstimate());
+    ground_truth.push_back(gt_values);
   }
+
+  // compute the accuracy (RMSE)
+  Tools tools;
+  cout << "Accuracy - RMSE:" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
 
   // close files
   if (out_file_.is_open()) {
