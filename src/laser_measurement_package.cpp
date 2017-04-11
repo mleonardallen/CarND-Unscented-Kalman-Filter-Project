@@ -79,8 +79,7 @@ VectorXd LaserMeasurementPackage::getRawMeasurement() {
  * @return error/diff
  */
 MatrixXd LaserMeasurementPackage::getError(const VectorXd& pred, const VectorXd& mean) {
-  VectorXd y = pred - mean;
-  return y;
+  return pred - mean;
 }
 
 /**
